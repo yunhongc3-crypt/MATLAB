@@ -16,5 +16,4 @@ csvFileName = 'ADC_data_380.csv';
 
 % 每一筆 ADC 有效資料的時間間隔
 samplePeriodNs = 14290;                 % 單位 ns
-samplePeriod = samplePeriodNs * 1e-9;   % 換算成秒
-fs = 1 / samplePeriod;                 
+samplePeriod = samplePeriodNs * 1e-9;   % 換
