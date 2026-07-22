@@ -28,6 +28,9 @@ Q120 = 20;
 % Second-order Butterworth low-pass cutoff frequency
 Fc = 500;               % Hz
 
+% Ignore this initial interval when calculating steady-state statistics
+settlingTime = 0.08;    % s
+
 % Plot settings
 fftMaxFrequency = 550;  % Hz
 zoomStartTime = 0;      % s
@@ -70,13 +73,14 @@ x = x(isfinite(x));
 
 N = length(x);
 t = (0:N-1).' / Fs;
+recordDuration = N / Fs;
 
 fprintf('\nSignal information:\n');
 fprintf('Signal name       = %s\n', signalName);
 fprintf('CSV column        = %s\n', matchedSignalName);
 fprintf('Sampling frequency= %.9f Hz\n', Fs);
 fprintf('Number of samples = %d\n', N);
-fprintf('Record duration   = %.9f s\n', N/Fs);
+fprintf('Record duration   = %.9f s\n', recordDuration);
 fprintf('Original mean     = %.6f ADC code\n', mean(x));
 fprintf('Original Vpp      = %.6f ADC code\n', max(x)-min(x));
 
@@ -96,13 +100,38 @@ bw120 = w0120 / Q120;
 [bLP, aLP] = butter(2, Fc/(Fs/2), 'low');
 
 %% Apply filters in cascade
-xAfter60 = filter(b60, a60, x);
-xAfter120 = filter(b120, a120, xAfter60);
-xFiltered = filter(bLP, aLP, xAfter120);
+% Remove the DC component before filtering to avoid a large startup step.
+% Add the DC component back after each filter stage.
+dcValue = mean(x);
+xAC = x - dcValue;
+
+xAfter60AC = filter(b60, a60, xAC);
+xAfter120AC = filter(b120, a120, xAfter60AC);
+xFilteredAC = filter(bLP, aLP, xAfter120AC);
+
+xAfter60 = xAfter60AC + dcValue;
+xAfter120 = xAfter120AC + dcValue;
+xFiltered = xFilteredAC + dcValue;
+
+%% Steady-state statistics
+if settlingTime >= recordDuration
+    warning(['settlingTime is greater than or equal to the record duration. ' ...
+        'Using the final 20%% of the data for steady-state statistics.']);
+    steadyIndex = t >= 0.8 * recordDuration;
+    effectiveSettlingTime = 0.8 * recordDuration;
+else
+    steadyIndex = t >= settlingTime;
+    effectiveSettlingTime = settlingTime;
+end
 
 fprintf('\nFiltered signal information:\n');
-fprintf('Filtered mean     = %.6f ADC code\n', mean(xFiltered));
-fprintf('Filtered Vpp      = %.6f ADC code\n', max(xFiltered)-min(xFiltered));
+fprintf('DC value removed  = %.6f ADC code\n', dcValue);
+fprintf('Statistics start  = %.6f s\n', effectiveSettlingTime);
+fprintf('Steady samples    = %d\n', nnz(steadyIndex));
+fprintf('Filtered mean     = %.6f ADC code\n', ...
+    mean(xFiltered(steadyIndex)));
+fprintf('Filtered Vpp      = %.6f ADC code\n', ...
+    max(xFiltered(steadyIndex)) - min(xFiltered(steadyIndex)));
 
 %% Figure 1: Complete time-domain comparison
 figure('Name', 'Complete time-domain comparison');
@@ -110,6 +139,8 @@ plot(t, x, 'DisplayName', 'Original');
 hold on;
 plot(t, xFiltered, 'LineWidth', 1.2, ...
     'DisplayName', '60 Hz notch + 120 Hz notch + 500 Hz LPF');
+xline(effectiveSettlingTime, '--', 'Statistics start', ...
+    'HandleVisibility', 'off');
 grid on;
 xlabel('Time (s)');
 ylabel('Amplitude (ADC code)');
@@ -124,6 +155,8 @@ plot(t(zoomIndex), x(zoomIndex), 'DisplayName', 'Original');
 hold on;
 plot(t(zoomIndex), xFiltered(zoomIndex), 'LineWidth', 1.3, ...
     'DisplayName', 'Filtered');
+xline(effectiveSettlingTime, '--', 'Statistics start', ...
+    'HandleVisibility', 'off');
 grid on;
 xlabel('Time (s)');
 ylabel('Amplitude (ADC code)');
@@ -141,6 +174,8 @@ plot(t(zoomIndex), xAfter120(zoomIndex), ...
     'DisplayName', 'After 60 Hz + 120 Hz notch');
 plot(t(zoomIndex), xFiltered(zoomIndex), 'LineWidth', 1.3, ...
     'DisplayName', 'After 500 Hz LPF');
+xline(effectiveSettlingTime, '--', 'Statistics start', ...
+    'HandleVisibility', 'off');
 grid on;
 xlabel('Time (s)');
 ylabel('Amplitude (ADC code)');
