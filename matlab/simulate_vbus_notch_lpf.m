@@ -124,14 +124,24 @@ else
     effectiveSettlingTime = settlingTime;
 end
 
+% Calculate steady-state Vpp for the original signal and every filter stage.
+originalVpp = max(x(steadyIndex)) - min(x(steadyIndex));
+after60Vpp = max(xAfter60(steadyIndex)) - min(xAfter60(steadyIndex));
+after120Vpp = max(xAfter120(steadyIndex)) - min(xAfter120(steadyIndex));
+afterLPFVpp = max(xFiltered(steadyIndex)) - min(xFiltered(steadyIndex));
+
 fprintf('\nFiltered signal information:\n');
 fprintf('DC value removed  = %.6f ADC code\n', dcValue);
 fprintf('Statistics start  = %.6f s\n', effectiveSettlingTime);
 fprintf('Steady samples    = %d\n', nnz(steadyIndex));
 fprintf('Filtered mean     = %.6f ADC code\n', ...
     mean(xFiltered(steadyIndex)));
-fprintf('Filtered Vpp      = %.6f ADC code\n', ...
-    max(xFiltered(steadyIndex)) - min(xFiltered(steadyIndex)));
+
+fprintf('\n===== Steady-state Vpp comparison =====\n');
+fprintf('Original signal                    = %.6f ADC code\n', originalVpp);
+fprintf('After 60 Hz notch                  = %.6f ADC code\n', after60Vpp);
+fprintf('After 60 Hz + 120 Hz notch         = %.6f ADC code\n', after120Vpp);
+fprintf('After notch filters + 500 Hz LPF   = %.6f ADC code\n', afterLPFVpp);
 
 %% Figure 1: Complete time-domain comparison
 figure('Name', 'Complete time-domain comparison');
@@ -166,14 +176,16 @@ legend('Location', 'best');
 
 %% Figure 3: Output after each filter stage
 figure('Name', 'Output after each filter stage');
-plot(t(zoomIndex), x(zoomIndex), 'DisplayName', 'Original');
+plot(t(zoomIndex), x(zoomIndex), ...
+    'DisplayName', sprintf('Original, Vpp = %.3f', originalVpp));
 hold on;
 plot(t(zoomIndex), xAfter60(zoomIndex), ...
-    'DisplayName', 'After 60 Hz notch');
+    'DisplayName', sprintf('After 60 Hz notch, Vpp = %.3f', after60Vpp));
 plot(t(zoomIndex), xAfter120(zoomIndex), ...
-    'DisplayName', 'After 60 Hz + 120 Hz notch');
+    'DisplayName', sprintf('After 60 Hz + 120 Hz notch, Vpp = %.3f', after120Vpp));
 plot(t(zoomIndex), xFiltered(zoomIndex), 'LineWidth', 1.3, ...
-    'DisplayName', 'After 500 Hz LPF');
+    'DisplayName', sprintf('After notch filters + 500 Hz LPF, Vpp = %.3f', ...
+    afterLPFVpp));
 xline(effectiveSettlingTime, '--', 'Statistics start', ...
     'HandleVisibility', 'off');
 grid on;
@@ -205,13 +217,14 @@ hFiltered = stem( ...
     'DisplayName', 'Filtered');
 hOriginal.BaseLine.Visible = 'off';
 hFiltered.BaseLine.Visible = 'off';
-xline(60, '--', '60 Hz');
-xline(120, '--', '120 Hz');
+xline(60, '--', '60 Hz', 'HandleVisibility', 'off');
+xline(120, '--', '120 Hz', 'HandleVisibility', 'off');
 grid on;
 xlabel('Frequency (Hz)');
 ylabel('Amplitude (ADC code)');
 title([signalName, ' FFT comparison']);
-legend('Location', 'best');
+legend([hOriginal, hFiltered], {'Original', 'Filtered'}, ...
+    'Location', 'best');
 xlim([0 fftMaxFrequency]);
 
 %% Overall filter frequency response
