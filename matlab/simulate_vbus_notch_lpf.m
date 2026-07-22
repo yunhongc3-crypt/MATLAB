@@ -13,7 +13,8 @@ clc;
 close all;
 
 %% User settings
-filename = 'ADC_data_380.csv';
+scriptFolder = fileparts(mfilename('fullpath'));
+filename = fullfile(scriptFolder, '..', 'CSV', 'ADC_data_380.csv');
 signalName = 'Vbus';
 
 % Actual ADC sampling period and sampling frequency
@@ -44,11 +45,24 @@ fprintf('\nCSV columns:\n');
 disp(dataTable.Properties.VariableNames.');
 
 variableNames = string(dataTable.Properties.VariableNames);
-signalIndex = find(strcmpi(variableNames, signalName), 1);
 
-if isempty(signalIndex)
-    error('Cannot find column "%s". Please modify signalName.', signalName);
+% Find a column whose name contains signalName, for example:
+% dut/design_1_i/Vbus_signal_debug[11:0]
+matchingIndices = find(contains(variableNames, signalName, ...
+    'IgnoreCase', true));
+
+if isempty(matchingIndices)
+    error('Cannot find a column containing "%s". Please modify signalName.', ...
+        signalName);
+elseif numel(matchingIndices) > 1
+    fprintf('\nMultiple columns contain "%s":\n', signalName);
+    disp(variableNames(matchingIndices).');
+    error('More than one matching column was found. Use a more specific signalName.');
 end
+
+signalIndex = matchingIndices(1);
+matchedSignalName = variableNames(signalIndex);
+fprintf('Selected CSV column: %s\n', matchedSignalName);
 
 x = double(dataTable{:, signalIndex});
 x = x(:);
@@ -59,6 +73,7 @@ t = (0:N-1).' / Fs;
 
 fprintf('\nSignal information:\n');
 fprintf('Signal name       = %s\n', signalName);
+fprintf('CSV column        = %s\n', matchedSignalName);
 fprintf('Sampling frequency= %.9f Hz\n', Fs);
 fprintf('Number of samples = %d\n', N);
 fprintf('Record duration   = %.9f s\n', N/Fs);
@@ -208,7 +223,8 @@ outputTable = table( ...
     'After_120Hz_Notch', ...
     'After_500Hz_LPF'});
 
-outputFilename = [signalName, '_filtered_result.csv'];
+outputFilename = fullfile(scriptFolder, ...
+    [signalName, '_filtered_result.csv']);
 writetable(outputTable, outputFilename);
 fprintf('\nFiltered data saved to: %s\n', outputFilename);
 
