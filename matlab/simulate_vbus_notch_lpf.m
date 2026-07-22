@@ -223,8 +223,8 @@ grid on;
 xlabel('Frequency (Hz)');
 ylabel('Amplitude (ADC code)');
 title([signalName, ' FFT comparison']);
-legend([hOriginal, hFiltered], {'Original', 'Filtered'}, ...
-    'Location', 'best');
+fftLegend = legend('show');
+fftLegend.Location = 'best';
 xlim([0 fftMaxFrequency]);
 
 %% Overall filter frequency response
