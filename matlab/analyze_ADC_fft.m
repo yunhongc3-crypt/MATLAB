@@ -1,6 +1,6 @@
 %% analyze_ADC_fft.m
-% Vivado ILA 匯出 CSV 的 Vbus 頻譜分析
-% 僅分析 Vbus 通道，不顯示 i_sen、Vac，也不繪製指定頻率垂直線
+% Vivado ILA 匯出 CSV 的 ADC 頻譜分析
+% 分析 i_sen、Vbus、Vac 三個通道
 %
 % 預設資料夾結構：
 % MATLAB/
@@ -12,7 +12,7 @@ clc;
 close all;
 
 %% ==================== 使用者設定 ====================
-csvFileName = 'ADC_data_380.csv';
+csvFileName = 'ADC_data_380_bk_2.2u_Vac_s_0723.csv';
 
 % 每一筆 ADC 有效資料的時間間隔
 samplePeriodNs = 14290;                 % 單位 ns
@@ -47,17 +47,27 @@ fprintf('Table columns   : %d\n', width(dataTable));
 fprintf('\nCSV columns:\n');
 disp(dataTable.Properties.VariableNames.');
 
-%% ==================== 尋找 Vbus 欄位 ====================
+%% ==================== 尋找通道欄位 ====================
+iSenColumn = findColumnByKeyword(dataTable, {'i_sen', 'isen', 'i sen'});
 vbusColumn = findColumnByKeyword(dataTable, {'vbus', 'v_bus', 'v bus'});
+vacColumn  = findColumnByKeyword(dataTable, {'vac', 'v_ac', 'v ac'});
 
-fprintf('\n===== Selected column =====\n');
-fprintf('Vbus : %s\n', dataTable.Properties.VariableNames{vbusColumn});
+fprintf('\n===== Selected columns =====\n');
+fprintf('i_sen : %s\n', dataTable.Properties.VariableNames{iSenColumn});
+fprintf('Vbus  : %s\n', dataTable.Properties.VariableNames{vbusColumn});
+fprintf('Vac   : %s\n', dataTable.Properties.VariableNames{vacColumn});
 
 %% ==================== 轉成數值 ====================
+iSenCode = convertColumnToDouble(dataTable{:, iSenColumn});
 vbusCode = convertColumnToDouble(dataTable{:, vbusColumn});
-vbusCode = vbusCode(isfinite(vbusCode));
+vacCode  = convertColumnToDouble(dataTable{:, vacColumn});
 
-numberOfSamples = length(vbusCode);
+validIndex = isfinite(iSenCode) & isfinite(vbusCode) & isfinite(vacCode);
+iSenCode = iSenCode(validIndex);
+vbusCode = vbusCode(validIndex);
+vacCode  = vacCode(validIndex);
+
+numberOfSamples = length(iSenCode);
 if numberOfSamples < 16
     error('有效資料點太少，無法執行 FFT。');
 end
@@ -75,65 +85,141 @@ fprintf('Measurement time   = %.6f s\n', measurementTime);
 fprintf('FFT bin spacing    = %.6f Hz\n', frequencyResolution);
 
 %% ==================== 時域統計 ====================
+printStatistics('i_sen', iSenCode);
 printStatistics('Vbus', vbusCode);
+printStatistics('Vac', vacCode);
 
-%% ==================== Vbus 時域圖 ====================
+%% ==================== 時域圖 ====================
 plotSamples = min(numberOfSamples, maxTimePlotSamples);
 
-figure('Name', 'Vbus time-domain signal', 'Color', 'k');
+figure('Name', 'ADC time-domain signals', 'Color', 'k');
+tiledlayout(3, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+nexttile;
+plot(time(1:plotSamples), iSenCode(1:plotSamples), 'LineWidth', 1);
+formatDarkAxes(gca);
+xlabel('Time (s)');
+ylabel('ADC code');
+title('i\_sen time-domain signal');
+
+nexttile;
 plot(time(1:plotSamples), vbusCode(1:plotSamples), 'LineWidth', 1);
 formatDarkAxes(gca);
 xlabel('Time (s)');
 ylabel('ADC code');
 title('Vbus time-domain signal');
 
-%% ==================== Vbus FFT ====================
-[vbusFreq, vbusAmplitude, vbusAmplitudeDb] = ...
-    calculateSingleSidedFFT(vbusCode, fs);
+nexttile;
+plot(time(1:plotSamples), vacCode(1:plotSamples), 'LineWidth', 1);
+formatDarkAxes(gca);
+xlabel('Time (s)');
+ylabel('ADC code');
+title('Vac time-domain signal');
 
-%% ==================== Vbus 低頻線性頻譜 ====================
-figure('Name', 'Vbus low-frequency FFT', 'Color', 'k');
-plotSpectrumLinear( ...
-    vbusFreq, ...
-    vbusAmplitude, ...
-    lowFreqMax, ...
-    'Vbus low-frequency FFT spectrum');
+%% ==================== FFT ====================
+[iSenFreq, iSenAmplitude, iSenAmplitudeDb] = calculateSingleSidedFFT(iSenCode, fs);
+[vbusFreq, vbusAmplitude, vbusAmplitudeDb] = calculateSingleSidedFFT(vbusCode, fs);
+[vacFreq, vacAmplitude, vacAmplitudeDb] = calculateSingleSidedFFT(vacCode, fs);
 
-%% ==================== Vbus 完整單邊 dB 頻譜 ====================
-figure('Name', 'Vbus full single-sided FFT', 'Color', 'k');
-plotSpectrumDb( ...
-    vbusFreq, ...
-    vbusAmplitudeDb, ...
-    wideFreqMax, ...
-    'Vbus FFT spectrum: 0 to Nyquist');
+%% ==================== 低頻線性頻譜 ====================
+figure('Name', 'Low-frequency FFT', 'Color', 'k');
+tiledlayout(3, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+nexttile;
+plotSpectrumLinear(iSenFreq, iSenAmplitude, lowFreqMax, 'i\_sen FFT spectrum');
+nexttile;
+plotSpectrumLinear(vbusFreq, vbusAmplitude, lowFreqMax, 'Vbus FFT spectrum');
+nexttile;
+plotSpectrumLinear(vacFreq, vacAmplitude, lowFreqMax, 'Vac FFT spectrum');
+
+%% ==================== 完整單邊 dB 頻譜 ====================
+figure('Name', 'Full single-sided FFT', 'Color', 'k');
+tiledlayout(3, 1, 'TileSpacing', 'compact', 'Padding', 'compact');
+
+nexttile;
+plotSpectrumDb(iSenFreq, iSenAmplitudeDb, wideFreqMax, 'i\_sen FFT spectrum: 0 to Nyquist');
+nexttile;
+plotSpectrumDb(vbusFreq, vbusAmplitudeDb, wideFreqMax, 'Vbus FFT spectrum: 0 to Nyquist');
+nexttile;
+plotSpectrumDb(vacFreq, vacAmplitudeDb, wideFreqMax, 'Vac FFT spectrum: 0 to Nyquist');
+
+%% ==================== 三通道低頻比較 ====================
+figure('Name', 'ADC low-frequency spectrum comparison', 'Color', 'k');
+
+iSenDisplayIndex = iSenFreq <= lowFreqMax;
+vbusDisplayIndex = vbusFreq <= lowFreqMax;
+vacDisplayIndex = vacFreq <= lowFreqMax;
+
+hISen = stem( ...
+    iSenFreq(iSenDisplayIndex), ...
+    iSenAmplitude(iSenDisplayIndex), ...
+    'Marker', 'none', ...
+    'LineWidth', 1, ...
+    'DisplayName', 'i\_sen');
+hold on;
+
+hVbus = stem( ...
+    vbusFreq(vbusDisplayIndex), ...
+    vbusAmplitude(vbusDisplayIndex), ...
+    'Marker', 'none', ...
+    'LineWidth', 1, ...
+    'DisplayName', 'Vbus');
+
+hVac = stem( ...
+    vacFreq(vacDisplayIndex), ...
+    vacAmplitude(vacDisplayIndex), ...
+    'Marker', 'none', ...
+    'LineWidth', 1, ...
+    'DisplayName', 'Vac');
+
+hISen.BaseLine.Visible = 'off';
+hVbus.BaseLine.Visible = 'off';
+hVac.BaseLine.Visible = 'off';
+
+formatDarkAxes(gca);
+xlim([0 lowFreqMax]);
+xlabel('Frequency (Hz)');
+ylabel('Amplitude (ADC code)');
+title('ADC low-frequency FFT comparison');
+
+for targetFrequency = targetFrequencies
+    xline(targetFrequency, '--', sprintf('%g Hz', targetFrequency), ...
+        'Color', [0.8 0.8 0.8], ...
+        'LabelColor', 'w', ...
+        'HandleVisibility', 'off');
+end
+
+comparisonLegend = legend('show');
+comparisonLegend.Location = 'best';
+comparisonLegend.TextColor = 'w';
+comparisonLegend.Color = 'k';
 
 %% ==================== 指定頻率附近幅度 ====================
 fprintf('\n===============================================\n');
-fprintf('Vbus specified-frequency analysis\n');
+fprintf('Specified-frequency analysis\n');
 fprintf('Search range: target +/- %.2f Hz\n', targetSearchRange);
 fprintf('===============================================\n');
 
-printTargetFrequencyAmplitude( ...
-    'Vbus', ...
-    vbusFreq, ...
-    vbusAmplitude, ...
-    targetFrequencies, ...
-    targetSearchRange);
+printTargetFrequencyAmplitude('i_sen', iSenFreq, iSenAmplitude, ...
+    targetFrequencies, targetSearchRange);
+printTargetFrequencyAmplitude('Vbus', vbusFreq, vbusAmplitude, ...
+    targetFrequencies, targetSearchRange);
+printTargetFrequencyAmplitude('Vac', vacFreq, vacAmplitude, ...
+    targetFrequencies, targetSearchRange);
 
 %% ==================== 主要低頻峰值 ====================
 fprintf('\n===============================================\n');
-fprintf('Vbus dominant low-frequency components\n');
+fprintf('Dominant low-frequency components\n');
 fprintf('Search range: %.2f to %.2f Hz\n', ...
     peakSearchRange(1), peakSearchRange(2));
 fprintf('===============================================\n');
 
-printDominantFrequencies( ...
-    'Vbus', ...
-    vbusFreq, ...
-    vbusAmplitude, ...
-    peakSearchRange(1), ...
-    peakSearchRange(2), ...
-    numberOfPeaks);
+printDominantFrequencies('i_sen', iSenFreq, iSenAmplitude, ...
+    peakSearchRange(1), peakSearchRange(2), numberOfPeaks);
+printDominantFrequencies('Vbus', vbusFreq, vbusAmplitude, ...
+    peakSearchRange(1), peakSearchRange(2), numberOfPeaks);
+printDominantFrequencies('Vac', vacFreq, vacAmplitude, ...
+    peakSearchRange(1), peakSearchRange(2), numberOfPeaks);
 
 fprintf('\nFFT analysis completed.\n');
 
@@ -150,7 +236,6 @@ function columnIndex = findColumnByKeyword(dataTable, keywords)
         keyword = lower(keywords{keywordIndex});
         keyword = erase(keyword, {'_', ' ', '-'});
         matchedIndex = find(contains(normalizedNames, keyword), 1, 'first');
-
         if ~isempty(matchedIndex)
             columnIndex = matchedIndex;
             break;
@@ -158,9 +243,9 @@ function columnIndex = findColumnByKeyword(dataTable, keywords)
     end
 
     if isempty(columnIndex)
-        fprintf('\n找不到 Vbus 欄位。CSV 欄位如下：\n');
+        fprintf('\n找不到指定欄位。CSV 欄位如下：\n');
         disp(variableNames.');
-        error('請修改 Vbus 欄位關鍵字。');
+        error('請修改欄位關鍵字。');
     end
 end
 
@@ -170,7 +255,6 @@ function outputData = convertColumnToDouble(inputData)
     else
         outputData = str2double(string(inputData));
     end
-
     outputData = outputData(:);
 end
 
@@ -189,9 +273,7 @@ function printStatistics(signalName, signalData)
     fprintf('  std  = %.6f ADC code\n', signalStd);
 end
 
-function [frequency, amplitude, amplitudeDb] = ...
-    calculateSingleSidedFFT(signalData, fs)
-
+function [frequency, amplitude, amplitudeDb] = calculateSingleSidedFFT(signalData, fs)
     signalData = double(signalData(:));
     numberOfSamples = length(signalData);
     signalAc = signalData - mean(signalData);
@@ -225,46 +307,37 @@ end
 
 function plotSpectrumLinear(frequency, amplitude, maximumFrequency, plotTitle)
     validIndex = frequency <= maximumFrequency;
-
     spectrumStem = stem( ...
         frequency(validIndex), ...
         amplitude(validIndex), ...
         'Marker', 'none', ...
-        'LineWidth', 1, ...
-        'DisplayName', 'Vbus');
-
+        'LineWidth', 1);
     spectrumStem.BaseLine.Visible = 'off';
     formatDarkAxes(gca);
     xlim([0 maximumFrequency]);
     xlabel('Frequency (Hz)');
     ylabel('Amplitude (ADC code)');
     title(plotTitle);
-
-    spectrumLegend = legend('show');
-    spectrumLegend.Location = 'best';
-    spectrumLegend.TextColor = 'w';
-    spectrumLegend.Color = 'k';
+    xline(60, '--', '60 Hz', ...
+        'Color', [0.8 0.8 0.8], ...
+        'LabelColor', 'w', ...
+        'HandleVisibility', 'off');
+    xline(120, '--', '120 Hz', ...
+        'Color', [0.8 0.8 0.8], ...
+        'LabelColor', 'w', ...
+        'HandleVisibility', 'off');
 end
 
 function plotSpectrumDb(frequency, amplitudeDb, maximumFrequency, plotTitle)
     validIndex = frequency <= maximumFrequency;
-
-    plot( ...
-        frequency(validIndex), ...
-        amplitudeDb(validIndex), ...
-        'LineWidth', 1, ...
-        'DisplayName', 'Vbus');
-
+    plot(frequency(validIndex), amplitudeDb(validIndex), 'LineWidth', 1);
     formatDarkAxes(gca);
     xlim([0 maximumFrequency]);
     xlabel('Frequency (Hz)');
     ylabel('Magnitude (dB re 1 ADC code)');
     title(plotTitle);
-
-    spectrumLegend = legend('show');
-    spectrumLegend.Location = 'best';
-    spectrumLegend.TextColor = 'w';
-    spectrumLegend.Color = 'k';
+    xline(60, '--', '60 Hz', 'Color', [0.8 0.8 0.8], 'LabelColor', 'w');
+    xline(120, '--', '120 Hz', 'Color', [0.8 0.8 0.8], 'LabelColor', 'w');
 end
 
 function printTargetFrequencyAmplitude(signalName, frequency, amplitude, ...
@@ -303,10 +376,8 @@ function printDominantFrequencies(signalName, frequency, amplitude, ...
         return;
     end
 
-    localMaximumIndex = ...
-        searchAmplitude(2:end - 1) > searchAmplitude(1:end - 2) & ...
-        searchAmplitude(2:end - 1) >= searchAmplitude(3:end);
-
+    localMaximumIndex = searchAmplitude(2:end - 1) > searchAmplitude(1:end - 2) & ...
+                        searchAmplitude(2:end - 1) >= searchAmplitude(3:end);
     peakIndices = find(localMaximumIndex) + 1;
 
     if isempty(peakIndices)
@@ -325,9 +396,7 @@ function printDominantFrequencies(signalName, frequency, amplitude, ...
 
     for peakNumber = 1:numberToDisplay
         fprintf('  %4d      %9.3f Hz     %10.6f code\n', ...
-            peakNumber, ...
-            sortedFrequencies(peakNumber), ...
-            sortedAmplitudes(peakNumber));
+            peakNumber, sortedFrequencies(peakNumber), sortedAmplitudes(peakNumber));
     end
 end
 
