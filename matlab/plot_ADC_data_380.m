@@ -1,12 +1,13 @@
 %% plot_ADC_data_380.m
 % Read one Vivado ILA CSV file and plot three 12-bit ADC signals.
+% Signal columns are decoded according to the CSV Radix row.
 
 clear;
 clc;
 close all;
 
 %% User settings
-filename = 'ADC_data_0_ps_2.2u_div5_0722.csv';
+filename = 'ADC_data_200_bk_2.2u_Vac_s_0723.csv';
 plotInVoltage = false;
 adcFullScaleVoltage = 1.0;
 adcMaxCode = 4095;
@@ -16,29 +17,38 @@ scriptPath = fileparts(mfilename('fullpath'));
 repositoryPath = fileparts(scriptPath);
 filePath = fullfile(repositoryPath, 'CSV', filename);
 
-if ~isfile(filePath)
-    error('CSV file not found: %s', filePath);
+%% Read Vivado ILA CSV
+% Row 2 contains the radix of each column. HEX signal values are converted
+% with hex2dec; Sample and Trigger columns remain UNSIGNED decimal values.
+[data, ilaInfo] = readVivadoIlaCsv(filePath);
+
+fprintf('\n===== CSV radix information =====\n');
+for k = 1:ilaInfo.NumberOfColumns
+    fprintf('%-65s : %s\n', ilaInfo.OriginalVariableNames(k), ilaInfo.Radix(k));
 end
 
-%% Read data
-% Vivado ILA CSV: row 1 names, row 2 radix, data starts at row 3.
-data = readmatrix(filePath, 'NumHeaderLines', 2);
-
-if size(data, 2) < 6
+if width(data) < 6
     error('CSV must contain at least 6 columns.');
 end
 
-data = data(all(~isnan(data(:, 1:6)), 2), :);
+sampleBuffer = data{:, 1}; %#ok<NASGU>
+sampleWindow = data{:, 2};
+trigger = data{:, 3};
+iSenCode = data{:, 4};
+vbusCode = data{:, 5};
+vacCode = data{:, 6};
 
-sampleBuffer = data(:, 1);
-sampleWindow = data(:, 2);
-trigger = data(:, 3);
-iSenCode = data(:, 4);
-vbusCode = data(:, 5);
-vacCode = data(:, 6);
+validIndex = isfinite(sampleWindow) & isfinite(trigger) & ...
+    isfinite(iSenCode) & isfinite(vbusCode) & isfinite(vacCode);
 
-if size(data, 2) >= 7
-    vacValid = data(:, 7); %#ok<NASGU>
+sampleWindow = sampleWindow(validIndex);
+trigger = trigger(validIndex);
+iSenCode = iSenCode(validIndex);
+vbusCode = vbusCode(validIndex);
+vacCode = vacCode(validIndex);
+
+if width(data) >= 7
+    vacValid = data{validIndex, 7}; %#ok<NASGU>
 else
     vacValid = ones(size(sampleWindow)); %#ok<NASGU>
 end
