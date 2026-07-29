@@ -6,7 +6,7 @@ clc;
 close all;
 
 %% User settings
-filename = 'ADC_data_380_0721.csv';
+filename = 'ADC_data_100_0.8A.csv';
 plotInVoltage = false;
 adcFullScaleVoltage = 1.0;
 adcMaxCode = 4095;

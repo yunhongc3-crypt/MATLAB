@@ -12,7 +12,7 @@ clc;
 close all;
 
 %% ==================== 使用者設定 ====================
-csvFileName = 'ADC_data_380.csv';
+csvFileName = 'ADC_data_100_0.8A.csv';
 
 % 每一筆 ADC 有效資料的時間間隔
 samplePeriodNs = 14290;                 % 單位 ns
