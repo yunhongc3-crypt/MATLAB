@@ -1,10 +1,15 @@
 %% analyze_ADC_fft.m
-% Vivado ILA 匯出 CSV 的 Vbus 頻譜分析
-% 僅分析 Vbus 通道，不顯示 i_sen、Vac，也不繪製指定頻率垂直線
+% Vivado ILA 匯出 CSV 的 Vbus 與 i_sen 頻譜分析
+% 對 Vbus、i_sen 分別顯示：
+%   1. 時域波形與統計值
+%   2. 低頻線性 FFT
+%   3. 完整單邊 dB FFT
+%   4. 指定頻率附近幅度
+%   5. 主要低頻峰值
 %
 % 預設資料夾結構：
 % MATLAB/
-%   CSV/ADC_data_380.csv
+%   CSV/0729/ADC_data_100_0.8A.csv
 %   matlab/analyze_ADC_fft.m
 
 clear;
@@ -12,6 +17,7 @@ clc;
 close all;
 
 %% ==================== 使用者設定 ====================
+csvRelativeFolder = fullfile('CSV', '0729');
 csvFileName = 'ADC_data_100_0.8A.csv';
 
 % 每一筆 ADC 有效資料的時間間隔
@@ -30,7 +36,7 @@ targetSearchRange = 5;                 % 指定頻率搜尋範圍 +/- Hz
 %% ==================== 建立 CSV 路徑 ====================
 scriptPath = fileparts(mfilename('fullpath'));
 repositoryPath = fileparts(scriptPath);
-filename = fullfile(repositoryPath, 'CSV', csvFileName);
+filename = fullfile(repositoryPath, csvRelativeFolder, csvFileName);
 
 if ~isfile(filename)
     error('找不到 CSV 檔案：%s', filename);
@@ -47,19 +53,27 @@ fprintf('Table columns   : %d\n', width(dataTable));
 fprintf('\nCSV columns:\n');
 disp(dataTable.Properties.VariableNames.');
 
-%% ==================== 尋找 Vbus 欄位 ====================
-vbusColumn = findColumnByKeyword(dataTable, {'vbus', 'v_bus', 'v bus'});
+%% ==================== 尋找訊號欄位 ====================
+vbusColumn = findColumnByKeyword( ...
+    dataTable, {'vbus', 'v_bus', 'v bus'}, 'Vbus');
+iSenColumn = findColumnByKeyword( ...
+    dataTable, {'i_sen', 'isen', 'i sen', 'current'}, 'i_sen');
 
-fprintf('\n===== Selected column =====\n');
-fprintf('Vbus : %s\n', dataTable.Properties.VariableNames{vbusColumn});
+fprintf('\n===== Selected columns =====\n');
+fprintf('Vbus  : %s\n', dataTable.Properties.VariableNames{vbusColumn});
+fprintf('i_sen : %s\n', dataTable.Properties.VariableNames{iSenColumn});
 
-%% ==================== 轉成數值 ====================
-vbusCode = convertColumnToDouble(dataTable{:, vbusColumn});
-vbusCode = vbusCode(isfinite(vbusCode));
+%% ==================== 轉成數值並保留共同有效資料 ====================
+vbusRaw = convertColumnToDouble(dataTable{:, vbusColumn});
+iSenRaw = convertColumnToDouble(dataTable{:, iSenColumn});
+
+validRows = isfinite(vbusRaw) & isfinite(iSenRaw);
+vbusCode = vbusRaw(validRows);
+iSenCode = iSenRaw(validRows);
 
 numberOfSamples = length(vbusCode);
 if numberOfSamples < 16
-    error('有效資料點太少，無法執行 FFT。');
+    error('Vbus 與 i_sen 的共同有效資料點太少，無法執行 FFT。');
 end
 
 time = (0:numberOfSamples - 1).' * samplePeriod;
@@ -73,74 +87,85 @@ fprintf('Nyquist frequency  = %.6f Hz\n', fs/2);
 fprintf('Number of samples  = %d\n', numberOfSamples);
 fprintf('Measurement time   = %.6f s\n', measurementTime);
 fprintf('FFT bin spacing    = %.6f Hz\n', frequencyResolution);
+fprintf('Discarded rows     = %d\n', height(dataTable) - numberOfSamples);
 
-%% ==================== 時域統計 ====================
-printStatistics('Vbus', vbusCode);
+%% ==================== 分析 Vbus 與 i_sen ====================
+signalNames = {'Vbus', 'i_sen'};
+signalData = {vbusCode, iSenCode};
 
-%% ==================== Vbus 時域圖 ====================
-plotSamples = min(numberOfSamples, maxTimePlotSamples);
+for signalIndex = 1:numel(signalNames)
+    signalName = signalNames{signalIndex};
+    currentSignal = signalData{signalIndex};
 
-figure('Name', 'Vbus time-domain signal', 'Color', 'k');
-plot(time(1:plotSamples), vbusCode(1:plotSamples), 'LineWidth', 1);
-formatDarkAxes(gca);
-xlabel('Time (s)');
-ylabel('ADC code');
-title('Vbus time-domain signal');
+    %% 時域統計
+    printStatistics(signalName, currentSignal);
 
-%% ==================== Vbus FFT ====================
-[vbusFreq, vbusAmplitude, vbusAmplitudeDb] = ...
-    calculateSingleSidedFFT(vbusCode, fs);
+    %% 時域圖
+    plotSamples = min(numberOfSamples, maxTimePlotSamples);
+    figure('Name', [signalName ' time-domain signal'], 'Color', 'k');
+    plot(time(1:plotSamples), currentSignal(1:plotSamples), 'LineWidth', 1);
+    formatDarkAxes(gca);
+    xlabel('Time (s)');
+    ylabel('ADC code');
+    title([signalName ' time-domain signal']);
 
-%% ==================== Vbus 低頻線性頻譜 ====================
-figure('Name', 'Vbus low-frequency FFT', 'Color', 'k');
-plotSpectrumLinear( ...
-    vbusFreq, ...
-    vbusAmplitude, ...
-    lowFreqMax, ...
-    'Vbus low-frequency FFT spectrum');
+    %% FFT
+    [frequency, amplitude, amplitudeDb] = ...
+        calculateSingleSidedFFT(currentSignal, fs);
 
-%% ==================== Vbus 完整單邊 dB 頻譜 ====================
-figure('Name', 'Vbus full single-sided FFT', 'Color', 'k');
-plotSpectrumDb( ...
-    vbusFreq, ...
-    vbusAmplitudeDb, ...
-    wideFreqMax, ...
-    'Vbus FFT spectrum: 0 to Nyquist');
+    %% 低頻線性頻譜
+    figure('Name', [signalName ' low-frequency FFT'], 'Color', 'k');
+    plotSpectrumLinear( ...
+        frequency, ...
+        amplitude, ...
+        lowFreqMax, ...
+        signalName, ...
+        [signalName ' low-frequency FFT spectrum']);
 
-%% ==================== 指定頻率附近幅度 ====================
-fprintf('\n===============================================\n');
-fprintf('Vbus specified-frequency analysis\n');
-fprintf('Search range: target +/- %.2f Hz\n', targetSearchRange);
-fprintf('===============================================\n');
+    %% 完整單邊 dB 頻譜
+    figure('Name', [signalName ' full single-sided FFT'], 'Color', 'k');
+    plotSpectrumDb( ...
+        frequency, ...
+        amplitudeDb, ...
+        wideFreqMax, ...
+        signalName, ...
+        [signalName ' FFT spectrum: 0 to Nyquist']);
 
-printTargetFrequencyAmplitude( ...
-    'Vbus', ...
-    vbusFreq, ...
-    vbusAmplitude, ...
-    targetFrequencies, ...
-    targetSearchRange);
+    %% 指定頻率附近幅度
+    fprintf('\n===============================================\n');
+    fprintf('%s specified-frequency analysis\n', signalName);
+    fprintf('Search range: target +/- %.2f Hz\n', targetSearchRange);
+    fprintf('===============================================\n');
 
-%% ==================== 主要低頻峰值 ====================
-fprintf('\n===============================================\n');
-fprintf('Vbus dominant low-frequency components\n');
-fprintf('Search range: %.2f to %.2f Hz\n', ...
-    peakSearchRange(1), peakSearchRange(2));
-fprintf('===============================================\n');
+    printTargetFrequencyAmplitude( ...
+        signalName, ...
+        frequency, ...
+        amplitude, ...
+        targetFrequencies, ...
+        targetSearchRange);
 
-printDominantFrequencies( ...
-    'Vbus', ...
-    vbusFreq, ...
-    vbusAmplitude, ...
-    peakSearchRange(1), ...
-    peakSearchRange(2), ...
-    numberOfPeaks);
+    %% 主要低頻峰值
+    fprintf('\n===============================================\n');
+    fprintf('%s dominant low-frequency components\n', signalName);
+    fprintf('Search range: %.2f to %.2f Hz\n', ...
+        peakSearchRange(1), peakSearchRange(2));
+    fprintf('===============================================\n');
+
+    printDominantFrequencies( ...
+        signalName, ...
+        frequency, ...
+        amplitude, ...
+        peakSearchRange(1), ...
+        peakSearchRange(2), ...
+        numberOfPeaks);
+end
 
 fprintf('\nFFT analysis completed.\n');
 
 %% =========================================================
 % Local functions
 % =========================================================
-function columnIndex = findColumnByKeyword(dataTable, keywords)
+function columnIndex = findColumnByKeyword(dataTable, keywords, signalName)
     variableNames = dataTable.Properties.VariableNames;
     normalizedNames = lower(variableNames);
     normalizedNames = erase(normalizedNames, {'_', ' ', '-'});
@@ -158,9 +183,9 @@ function columnIndex = findColumnByKeyword(dataTable, keywords)
     end
 
     if isempty(columnIndex)
-        fprintf('\n找不到 Vbus 欄位。CSV 欄位如下：\n');
+        fprintf('\n找不到 %s 欄位。CSV 欄位如下：\n', signalName);
         disp(variableNames.');
-        error('請修改 Vbus 欄位關鍵字。');
+        error('請修改 %s 欄位關鍵字。', signalName);
     end
 end
 
@@ -223,7 +248,9 @@ function [frequency, amplitude, amplitudeDb] = ...
     amplitudeDb = 20*log10(amplitude + eps);
 end
 
-function plotSpectrumLinear(frequency, amplitude, maximumFrequency, plotTitle)
+function plotSpectrumLinear(frequency, amplitude, maximumFrequency, ...
+    signalName, plotTitle)
+
     validIndex = frequency <= maximumFrequency;
 
     spectrumStem = stem( ...
@@ -231,7 +258,7 @@ function plotSpectrumLinear(frequency, amplitude, maximumFrequency, plotTitle)
         amplitude(validIndex), ...
         'Marker', 'none', ...
         'LineWidth', 1, ...
-        'DisplayName', 'Vbus');
+        'DisplayName', signalName);
 
     spectrumStem.BaseLine.Visible = 'off';
     formatDarkAxes(gca);
@@ -246,14 +273,16 @@ function plotSpectrumLinear(frequency, amplitude, maximumFrequency, plotTitle)
     spectrumLegend.Color = 'k';
 end
 
-function plotSpectrumDb(frequency, amplitudeDb, maximumFrequency, plotTitle)
+function plotSpectrumDb(frequency, amplitudeDb, maximumFrequency, ...
+    signalName, plotTitle)
+
     validIndex = frequency <= maximumFrequency;
 
     plot( ...
         frequency(validIndex), ...
         amplitudeDb(validIndex), ...
         'LineWidth', 1, ...
-        'DisplayName', 'Vbus');
+        'DisplayName', signalName);
 
     formatDarkAxes(gca);
     xlim([0 maximumFrequency]);
