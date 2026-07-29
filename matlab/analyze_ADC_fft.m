@@ -1,6 +1,6 @@
 %% analyze_ADC_fft.m
-% Vivado ILA 匯出 CSV 的 Vbus 與 i_sen 頻譜分析
-% 對 Vbus、i_sen 分別顯示：
+% Vivado ILA 匯出 CSV 的 Vbus、i_sen 與 Vac 頻譜分析
+% 對 Vbus、i_sen、Vac 分別顯示：
 %   1. 時域波形與統計值
 %   2. 低頻線性 FFT
 %   3. 完整單邊 dB FFT
@@ -58,22 +58,27 @@ vbusColumn = findColumnByKeyword( ...
     dataTable, {'vbus', 'v_bus', 'v bus'}, 'Vbus');
 iSenColumn = findColumnByKeyword( ...
     dataTable, {'i_sen', 'isen', 'i sen', 'current'}, 'i_sen');
+vacColumn = findColumnByKeyword( ...
+    dataTable, {'vac', 'v_ac', 'v ac'}, 'Vac');
 
 fprintf('\n===== Selected columns =====\n');
 fprintf('Vbus  : %s\n', dataTable.Properties.VariableNames{vbusColumn});
 fprintf('i_sen : %s\n', dataTable.Properties.VariableNames{iSenColumn});
+fprintf('Vac   : %s\n', dataTable.Properties.VariableNames{vacColumn});
 
 %% ==================== 轉成數值並保留共同有效資料 ====================
 vbusRaw = convertColumnToDouble(dataTable{:, vbusColumn});
 iSenRaw = convertColumnToDouble(dataTable{:, iSenColumn});
+vacRaw = convertColumnToDouble(dataTable{:, vacColumn});
 
-validRows = isfinite(vbusRaw) & isfinite(iSenRaw);
+validRows = isfinite(vbusRaw) & isfinite(iSenRaw) & isfinite(vacRaw);
 vbusCode = vbusRaw(validRows);
 iSenCode = iSenRaw(validRows);
+vacCode = vacRaw(validRows);
 
 numberOfSamples = length(vbusCode);
 if numberOfSamples < 16
-    error('Vbus 與 i_sen 的共同有效資料點太少，無法執行 FFT。');
+    error('Vbus、i_sen 與 Vac 的共同有效資料點太少，無法執行 FFT。');
 end
 
 time = (0:numberOfSamples - 1).' * samplePeriod;
@@ -89,9 +94,9 @@ fprintf('Measurement time   = %.6f s\n', measurementTime);
 fprintf('FFT bin spacing    = %.6f Hz\n', frequencyResolution);
 fprintf('Discarded rows     = %d\n', height(dataTable) - numberOfSamples);
 
-%% ==================== 分析 Vbus 與 i_sen ====================
-signalNames = {'Vbus', 'i_sen'};
-signalData = {vbusCode, iSenCode};
+%% ==================== 分析 Vbus、i_sen 與 Vac ====================
+signalNames = {'Vbus', 'i_sen', 'Vac'};
+signalData = {vbusCode, iSenCode, vacCode};
 
 for signalIndex = 1:numel(signalNames)
     signalName = signalNames{signalIndex};
