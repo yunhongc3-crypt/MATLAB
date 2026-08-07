@@ -17,6 +17,7 @@
 %   - 每個通道各自正規化後上下排列
 %   - 左側不顯示通道文字
 %   - 右側 Legend 顯示「檔名 | 通道名稱」
+%   - X 軸從 t = 0 開始，不顯示負時間
 
 clear;
 clc;
@@ -47,8 +48,14 @@ cfg.plot.darkMode = true;
 cfg.plot.showLegend = true;
 cfg.plot.legendFontSize = 10;
 
+% 時間軸
+% false = 不顯示 t < 0（預設）
+% true  = 顯示對齊點之前的負時間資料
+cfg.time.showNegative = false;
+
 % X 軸範圍，單位秒；[] = 自動
-% 範例：[-5e-3 50e-3]
+% 當 showNegative = false 時，即使填負值，左界仍會被限制為 0。
+% 範例：[0 50e-3]
 cfg.time.xLim = [];
 
 % 每條曲線最多畫多少點；Inf = 全部
@@ -501,8 +508,25 @@ function plotAllCurves(curves, cfg)
     xlabel(ax, 'Time (s)');
     title(ax, sprintf('Time-aligned CSV channels (%d channels)', numberOfCurves));
 
+    % 時間顯示範圍。
+    % 預設只顯示 t >= 0；負時間資料仍保留供對齊使用，但不畫在視窗內。
     if ~isempty(cfg.time.xLim)
-        xlim(ax, cfg.time.xLim);
+        requestedXLim = cfg.time.xLim;
+
+        if ~cfg.time.showNegative
+            requestedXLim(1) = max(0, requestedXLim(1));
+        end
+
+        xlim(ax, requestedXLim);
+    elseif ~cfg.time.showNegative
+        automaticXLim = xlim(ax);
+        rightLimit = automaticXLim(2);
+
+        if ~isfinite(rightLimit) || rightLimit <= 0
+            rightLimit = 1;
+        end
+
+        xlim(ax, [0 rightLimit]);
     end
 
     xline(ax, 0, '--', 't = 0', ...
