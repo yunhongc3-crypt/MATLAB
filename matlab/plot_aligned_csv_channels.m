@@ -461,9 +461,13 @@ function plotAllCurves(curves, cfg)
 
             ylim(ax, [-0.30, (numberOfCurves - 1) * 1.35 + 1.30]);
 
-            % Y 軸也保留完整名稱，作為第三層保險。
-            ax.YTick = offsets;
-            ax.YTickLabel = {curves.displayName};
+            % MATLAB 要求 YTick 必須由小到大排列。
+            % 波形本身仍維持第一個通道在最上面，只排序刻度與對應名稱。
+            [sortedTicks, tickOrder] = sort(offsets, 'ascend');
+            allDisplayNames = string({curves.displayName});
+
+            ax.YTick = sortedTicks(:).';
+            ax.YTickLabel = cellstr(allDisplayNames(tickOrder));
             ax.TickLabelInterpreter = 'none';
             ylabel(ax, 'Channels');
 
