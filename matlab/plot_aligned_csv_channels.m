@@ -16,7 +16,7 @@
 %   3. 程式自動辨識格式、通道、時間並畫在同一張圖
 %
 % 顯示模式：
-%   "stacked"    最推薦。每個通道正規化後上下錯開，所有通道都看得到
+%   "stacked"    最推薦。每個通道正規化後上下錯開，並顯示通道名稱
 %   "normalized" 所有通道正規化到 0~1 後疊在一起
 %   "raw"        原始數值直接疊圖；不同單位/尺度時可能看不清楚
 
@@ -40,6 +40,12 @@ cfg.file.subfolder = "CSV";
 cfg.plot.mode = "stacked";
 cfg.plot.lineWidth = 1.0;
 cfg.plot.darkMode = true;
+
+% 通道名稱顯示
+% true  = 在每條 stacked 波形旁直接寫「檔名 | 通道名稱」
+% false = 只使用左側 Y 軸通道名稱
+cfg.plot.showChannelLabels = true;
+cfg.plot.channelLabelFontSize = 10;
 
 % X 軸範圍，單位秒；[] = 自動顯示全部資料
 % 例如只看 t = -5 ms ~ 50 ms：[-5e-3 50e-3]
@@ -495,8 +501,49 @@ function plotAllCurves(curves, cfg)
         xlim(ax, cfg.time.xLim);
     end
 
+    % stacked 模式：除了 Y 軸通道名稱，再把名稱直接寫到每條波形旁。
+    if mode == "stacked" && cfg.plot.showChannelLabels
+        addChannelLabels(ax, curves, offsets, cfg);
+    end
+
     formatAxes(ax, cfg.plot.darkMode);
     hold(ax, 'off');
+end
+
+function addChannelLabels(ax, curves, offsets, cfg)
+    xLimits = xlim(ax);
+    xSpan = xLimits(2) - xLimits(1);
+
+    if xSpan <= 0
+        return;
+    end
+
+    % 名稱放在圖內左側 1.5% 的位置。
+    labelX = xLimits(1) + 0.015 * xSpan;
+
+    if cfg.plot.darkMode
+        textColor = 'w';
+        backgroundColor = 'k';
+    else
+        textColor = 'k';
+        backgroundColor = 'w';
+    end
+
+    for curveIndex = 1:numel(curves)
+        text(ax, ...
+            labelX, ...
+            offsets(curveIndex), ...
+            curves(curveIndex).displayName, ...
+            'Interpreter', 'none', ...
+            'VerticalAlignment', 'middle', ...
+            'HorizontalAlignment', 'left', ...
+            'FontWeight', 'bold', ...
+            'FontSize', cfg.plot.channelLabelFontSize, ...
+            'Color', textColor, ...
+            'BackgroundColor', backgroundColor, ...
+            'Margin', 2, ...
+            'Clipping', 'on');
+    end
 end
 
 function normalizedData = normalizeZeroToOne(data)
