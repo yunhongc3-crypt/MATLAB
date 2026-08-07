@@ -13,10 +13,10 @@
 % 使用方式：
 %   Run -> Ctrl 多選 CSV -> Open
 %
-% 預設 stacked 模式會：
+% 預設 stacked 模式：
 %   - 每個通道各自正規化後上下排列
-%   - 波形左側直接顯示「檔名 | 通道名稱」
-%   - 右側固定顯示 Legend，避免通道名稱看不到
+%   - 左側不顯示通道文字
+%   - 右側 Legend 顯示「檔名 | 通道名稱」
 
 clear;
 clc;
@@ -43,10 +43,8 @@ cfg.plot.mode = "stacked";
 cfg.plot.lineWidth = 1.0;
 cfg.plot.darkMode = true;
 
-% 通道名稱
-cfg.plot.showInlineLabels = true;   % 波形左側直接寫名稱
-cfg.plot.showLegend = true;         % 右側固定 Legend
-cfg.plot.channelLabelFontSize = 11;
+% 通道名稱只放在右側 Legend
+cfg.plot.showLegend = true;
 cfg.plot.legendFontSize = 10;
 
 % X 軸範圍，單位秒；[] = 自動
@@ -435,7 +433,6 @@ function plotAllCurves(curves, cfg)
     hold(ax, 'on');
 
     lineHandles = gobjects(numberOfCurves, 1);
-    offsets = zeros(numberOfCurves, 1);
 
     switch mode
         case "stacked"
@@ -446,10 +443,7 @@ function plotAllCurves(curves, cfg)
                     cfg.plot.maxPointsPerCurve);
 
                 normalizedData = normalizeZeroToOne(dataToPlot);
-
-                % 第一條放最上面。
                 offset = (numberOfCurves - curveIndex) * 1.35;
-                offsets(curveIndex) = offset + 0.5;
 
                 lineHandles(curveIndex) = plot( ...
                     ax, ...
@@ -461,15 +455,10 @@ function plotAllCurves(curves, cfg)
 
             ylim(ax, [-0.30, (numberOfCurves - 1) * 1.35 + 1.30]);
 
-            % MATLAB 要求 YTick 必須由小到大排列。
-            % 波形本身仍維持第一個通道在最上面，只排序刻度與對應名稱。
-            [sortedTicks, tickOrder] = sort(offsets, 'ascend');
-            allDisplayNames = string({curves.displayName});
-
-            ax.YTick = sortedTicks(:).';
-            ax.YTickLabel = cellstr(allDisplayNames(tickOrder));
-            ax.TickLabelInterpreter = 'none';
-            ylabel(ax, 'Channels');
+            % 左側不顯示通道名稱、刻度文字或 Channels 標題。
+            ax.YTick = [];
+            ax.YTickLabel = {};
+            ylabel(ax, '');
 
         case "normalized"
             for curveIndex = 1:numberOfCurves
@@ -516,19 +505,13 @@ function plotAllCurves(curves, cfg)
         xlim(ax, cfg.time.xLim);
     end
 
-    % t = 0 對齊線
     xline(ax, 0, '--', 't = 0', ...
         'LineWidth', 1.3, ...
         'HandleVisibility', 'off');
 
     formatAxes(ax, cfg.plot.darkMode);
 
-    % stacked 模式：名稱直接寫進圖內。
-    if mode == "stacked" && cfg.plot.showInlineLabels
-        addInlineChannelLabels(ax, curves, offsets, cfg);
-    end
-
-    % 所有模式右側都可以固定顯示 Legend。
+    % 通道名稱統一放在右側 Legend。
     if cfg.plot.showLegend
         lgd = legend( ...
             ax, ...
@@ -542,46 +525,6 @@ function plotAllCurves(curves, cfg)
     end
 
     hold(ax, 'off');
-end
-
-function addInlineChannelLabels(ax, curves, offsets, cfg)
-    xLimits = xlim(ax);
-    xSpan = xLimits(2) - xLimits(1);
-
-    if ~isfinite(xSpan) || xSpan <= 0
-        return;
-    end
-
-    % 放在目前畫面最左側往內 1.2%。
-    labelX = xLimits(1) + 0.012 * xSpan;
-
-    if cfg.plot.darkMode
-        textColor = 'w';
-        backgroundColor = [0.05 0.05 0.05];
-        edgeColor = [0.35 0.35 0.35];
-    else
-        textColor = 'k';
-        backgroundColor = [1 1 1];
-        edgeColor = [0.75 0.75 0.75];
-    end
-
-    for curveIndex = 1:numel(curves)
-        text( ...
-            ax, ...
-            labelX, ...
-            offsets(curveIndex), ...
-            curves(curveIndex).displayName, ...
-            'Interpreter', 'none', ...
-            'FontSize', cfg.plot.channelLabelFontSize, ...
-            'FontWeight', 'bold', ...
-            'Color', textColor, ...
-            'BackgroundColor', backgroundColor, ...
-            'EdgeColor', edgeColor, ...
-            'Margin', 3, ...
-            'VerticalAlignment', 'middle', ...
-            'HorizontalAlignment', 'left', ...
-            'Clipping', 'on');
-    end
 end
 
 function normalizedData = normalizeZeroToOne(data)
